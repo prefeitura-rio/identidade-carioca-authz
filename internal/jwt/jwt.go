@@ -63,6 +63,8 @@ type Config struct {
 	JWKSEndpoint   string
 	ExpectedIssuer string
 	Timeout        time.Duration
+	CacheTTL       time.Duration // Normal cache TTL (default: 1 hour)
+	GraceTTL       time.Duration // Grace period for stale cache (default: 24 hours)
 }
 
 // parser implements the Parser interface
@@ -80,18 +82,27 @@ func (p *parser) debugLog(format string, args ...interface{}) {
 	}
 }
 
-// jwksCache caches JWKS with automatic refresh
+// jwksCache caches JWKS with automatic refresh and stale-while-revalidate support
 type jwksCache struct {
 	keys      map[string]*rsa.PublicKey
 	mu        sync.RWMutex
 	lastFetch time.Time
-	ttl       time.Duration
+	ttl       time.Duration // Normal TTL - triggers refresh
+	graceTTL  time.Duration // Grace period - allows stale cache on fetch failure
 }
 
 // NewParser creates a new JWT parser with JWKS fetching
 func NewParser(config *Config) Parser {
 	if config.Timeout == 0 {
 		config.Timeout = 5 * time.Second
+	}
+
+	// Set default cache TTLs if not configured
+	if config.CacheTTL == 0 {
+		config.CacheTTL = 1 * time.Hour // Default: 1 hour
+	}
+	if config.GraceTTL == 0 {
+		config.GraceTTL = 24 * time.Hour // Default: 24 hours
 	}
 
 	// Check if JWT debug mode is enabled
@@ -103,8 +114,9 @@ func NewParser(config *Config) Parser {
 			Timeout: config.Timeout,
 		},
 		jwksCache: &jwksCache{
-			keys: make(map[string]*rsa.PublicKey),
-			ttl:  1 * time.Hour, // Cache JWKS for 1 hour
+			keys:     make(map[string]*rsa.PublicKey),
+			ttl:      config.CacheTTL,
+			graceTTL: config.GraceTTL,
 		},
 		debug: debug,
 	}
@@ -205,35 +217,71 @@ func (p *parser) ParseToken(tokenString string) (*Claims, error) {
 }
 
 // getPublicKey retrieves a public key by kid, using cache when available
+// Implements stale-while-revalidate pattern for resilience
 func (p *parser) getPublicKey(kid string) (*rsa.PublicKey, error) {
-	// Check cache first
+	// Read current cache state
 	p.jwksCache.mu.RLock()
-	if key, exists := p.jwksCache.keys[kid]; exists && time.Since(p.jwksCache.lastFetch) < p.jwksCache.ttl {
-		p.jwksCache.mu.RUnlock()
-		p.debugLog("✓ JWKS cache HIT for kid=%s (age: %s)", kid, time.Since(p.jwksCache.lastFetch).Round(time.Second))
-		return key, nil
-	}
+	cachedKey, keyExists := p.jwksCache.keys[kid]
+	cacheAge := time.Since(p.jwksCache.lastFetch)
 	p.jwksCache.mu.RUnlock()
 
-	p.debugLog("✗ JWKS cache MISS for kid=%s - fetching from endpoint", kid)
+	// FRESH CACHE: Return immediately if within normal TTL
+	if keyExists && cacheAge < p.jwksCache.ttl {
+		p.debugLog("✓ JWKS cache HIT for kid=%s (age: %s)", kid, cacheAge.Round(time.Second))
+		return cachedKey, nil
+	}
 
-	// Fetch fresh JWKS
-	if err := p.fetchJWKS(); err != nil {
-		p.debugLog("✗ Failed to fetch JWKS: %v", err)
+	// STALE CACHE or MISS: Attempt to refresh
+	if keyExists {
+		p.debugLog("⚠ JWKS cache STALE for kid=%s (age: %s, ttl: %s) - attempting refresh",
+			kid, cacheAge.Round(time.Second), p.jwksCache.ttl)
+	} else {
+		p.debugLog("✗ JWKS cache MISS for kid=%s - fetching from endpoint", kid)
+	}
+
+	// Try to fetch fresh JWKS
+	err := p.fetchJWKS()
+	if err != nil {
+		// JWKS fetch failed
+		if keyExists {
+			// Check if we're still within grace period
+			if cacheAge < p.jwksCache.graceTTL {
+				// STALE-WHILE-REVALIDATE: Use stale cache as fallback
+				p.debugLog("⚠ JWKS fetch failed, using STALE cache for kid=%s (age: %s, grace: %s): %v",
+					kid, cacheAge.Round(time.Second), p.jwksCache.graceTTL, err)
+				log.Printf("[JWT] ⚠ WARNING: JWKS endpoint unreachable, using stale cache (age: %s) - this should be investigated",
+					cacheAge.Round(time.Second))
+				return cachedKey, nil // Return stale key instead of failing
+			}
+			// Beyond grace period - cannot use stale cache
+			p.debugLog("✗ JWKS fetch failed and cache beyond grace period (age: %s, grace: %s): %v",
+				cacheAge.Round(time.Second), p.jwksCache.graceTTL, err)
+			return nil, fmt.Errorf("JWKS cache expired beyond grace period and fetch failed: %w", err)
+		}
+
+		// No cached key available - must fail
+		p.debugLog("✗ Failed to fetch JWKS and no cached key available: %v", err)
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 
-	// Try to get key from updated cache
+	// Refresh succeeded - get updated key from cache
 	p.jwksCache.mu.RLock()
 	key, exists := p.jwksCache.keys[kid]
 	p.jwksCache.mu.RUnlock()
 
 	if !exists {
+		// Key not found in fresh JWKS (key rotation may have removed it)
+		if keyExists {
+			// Use the old key we had cached (it might still be valid)
+			p.debugLog("⚠ Kid '%s' not in fresh JWKS, using previously cached key", kid)
+			log.Printf("[JWT] ⚠ WARNING: Kid '%s' disappeared from JWKS - using stale cache, key rotation may be in progress", kid)
+			return cachedKey, nil
+		}
 		p.debugLog("✗ Key with kid '%s' not found in fetched JWKS", kid)
 		return nil, fmt.Errorf("key with kid '%s' not found in JWKS", kid)
 	}
 
-	p.debugLog("✓ Public key retrieved from fresh JWKS")
+	p.debugLog("✓ JWKS refreshed successfully for kid=%s", kid)
 	return key, nil
 }
 
@@ -268,11 +316,8 @@ func (p *parser) fetchJWKS() error {
 		return fmt.Errorf("failed to parse JWKS: %w", err)
 	}
 
-	// Update cache with new keys
-	p.jwksCache.mu.Lock()
-	defer p.jwksCache.mu.Unlock()
-
-	p.jwksCache.keys = make(map[string]*rsa.PublicKey)
+	// Parse new keys from JWKS
+	newKeys := make(map[string]*rsa.PublicKey)
 	for _, jwk := range jwks.Keys {
 		if jwk.Kty != "RSA" {
 			continue // Only support RSA keys
@@ -281,18 +326,24 @@ func (p *parser) fetchJWKS() error {
 		publicKey, err := jwkToRSAPublicKey(jwk)
 		if err != nil {
 			// Log error but continue with other keys
+			p.debugLog("⚠ Failed to parse JWK with kid=%s: %v", jwk.Kid, err)
 			continue
 		}
 
-		p.jwksCache.keys[jwk.Kid] = publicKey
+		newKeys[jwk.Kid] = publicKey
 	}
 
-	p.jwksCache.lastFetch = time.Now()
-
-	if len(p.jwksCache.keys) == 0 {
+	if len(newKeys) == 0 {
 		return fmt.Errorf("no valid RSA keys found in JWKS")
 	}
 
+	// Update cache with new keys (replaces all keys)
+	p.jwksCache.mu.Lock()
+	p.jwksCache.keys = newKeys
+	p.jwksCache.lastFetch = time.Now()
+	p.jwksCache.mu.Unlock()
+
+	p.debugLog("✓ JWKS cache updated with %d keys", len(newKeys))
 	return nil
 }
 

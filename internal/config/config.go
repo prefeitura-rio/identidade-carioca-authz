@@ -23,6 +23,8 @@ type Config struct {
 	JWKSEndpoint string
 	JWTIssuer    string
 	JWTTimeout   time.Duration
+	JWKSCacheTTL time.Duration
+	JWKSGraceTTL time.Duration
 
 	// Performance settings
 	CacheTTLSeconds       int
@@ -120,6 +122,23 @@ func Load() (*Config, error) {
 		if t, err := strconv.Atoi(jwtTimeout); err == nil && t > 0 {
 			config.JWTTimeout = time.Duration(t) * time.Second
 		}
+	}
+
+	// JWKS cache TTL settings
+	if cacheTTL := os.Getenv("JWKS_CACHE_TTL_SECONDS"); cacheTTL != "" {
+		if t, err := strconv.Atoi(cacheTTL); err == nil && t > 0 {
+			config.JWKSCacheTTL = time.Duration(t) * time.Second
+		}
+	} else {
+		config.JWKSCacheTTL = 1 * time.Hour // Default: 1 hour
+	}
+
+	if graceTTL := os.Getenv("JWKS_GRACE_TTL_SECONDS"); graceTTL != "" {
+		if t, err := strconv.Atoi(graceTTL); err == nil && t > 0 {
+			config.JWKSGraceTTL = time.Duration(t) * time.Second
+		}
+	} else {
+		config.JWKSGraceTTL = 24 * time.Hour // Default: 24 hours
 	}
 
 	// Cache settings

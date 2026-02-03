@@ -78,6 +78,8 @@ func NewService(cfg *config.Config) (*Service, error) {
 		JWKSEndpoint:   cfg.JWKSEndpoint,
 		ExpectedIssuer: cfg.JWTIssuer,
 		Timeout:        cfg.JWTTimeout,
+		CacheTTL:       cfg.JWKSCacheTTL,
+		GraceTTL:       cfg.JWKSGraceTTL,
 	}
 	jwtParser := jwt.NewParser(jwtConfig)
 
