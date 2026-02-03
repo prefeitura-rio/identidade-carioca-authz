@@ -55,9 +55,12 @@ The service is configured using environment variables. Copy `.env.example` to `.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `VERIFY_JWT` | Enable JWT signature verification | `false` | No |
-| `KEYCLOAK_JWKS` | JWKS endpoint URL for JWT signature verification | - | **Yes** if `VERIFY_JWT=true` |
-| `JWT_TIMEOUT_SECONDS` | Timeout for JWT validation operations | `1` | No |
+| `JWKS_ENDPOINT` | JWKS endpoint URL for JWT signature verification | - | **Yes** |
+| `JWT_ISSUER` | Expected JWT issuer (must match `iss` claim exactly) | - | **Yes** |
+| `JWT_TIMEOUT_SECONDS` | Timeout for JWT validation operations | `5` | No |
+| `JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL - triggers refresh when expired | `3600` (1 hour) | No |
+| `JWKS_GRACE_TTL_SECONDS` | Grace period for stale cache fallback | `86400` (24 hours) | No |
+| `JWT_DEBUG` | Enable detailed JWT validation debug logging | `false` | No |
 
 ### Caching & Performance
 
@@ -110,25 +113,35 @@ MOCK_MODE=false
 
 ### JWT Configuration
 
-The service integrates with Cerbos PDP and supports JWT-based authentication:
+The service integrates with Cerbos PDP and supports JWT-based authentication with **stale-while-revalidate** caching for resilience:
 
-1. **Configure JWT verification (optional):**
+1. **Configure JWT verification:**
    ```bash
-   # Enable JWT signature verification
-   export VERIFY_JWT=true
-   export KEYCLOAK_JWKS=https://your-keycloak.example.com/auth/realms/your-realm/protocol/openid-connect/certs
+   export JWKS_ENDPOINT=https://your-keycloak.example.com/auth/realms/your-realm/protocol/openid-connect/certs
+   export JWT_ISSUER=https://your-keycloak.example.com/auth/realms/your-realm
    ```
 
-2. **For development without JWT verification:**
+2. **Configure JWKS caching (optional):**
    ```bash
-   # Disable JWT verification for testing
-   export VERIFY_JWT=false
+   # Normal cache TTL - JWKS refreshed after 1 hour
+   export JWKS_CACHE_TTL_SECONDS=3600
+
+   # Grace period - use stale cache for up to 24 hours if JWKS endpoint is unreachable
+   # This prevents service outages during JWKS endpoint failures
+   export JWKS_GRACE_TTL_SECONDS=86400
    ```
 
 3. **Configure Cerbos endpoint:**
    ```bash
    export CERBOS_CHECK=http://cerbos:3592/api/check/resources
    ```
+
+**Stale-While-Revalidate Pattern:**
+- JWKS keys are cached and automatically refreshed after `JWKS_CACHE_TTL_SECONDS`
+- If the JWKS endpoint is unreachable during refresh, the service uses the stale cache
+- Stale cache is valid for `JWKS_GRACE_TTL_SECONDS` (default: 24 hours)
+- This ensures JWT validation continues working even during JWKS endpoint outages
+- Warning logs are emitted when using stale cache for monitoring/alerting
 
 ## API Endpoints
 
@@ -398,6 +411,13 @@ When Cerbos API is unavailable:
 - Monitor and alert on degraded state
 
 ## Recent Improvements
+
+### JWKS Stale-While-Revalidate Caching (NEW)
+- **Resilient JWT validation**: Continues validating JWTs even when JWKS endpoint is temporarily unreachable
+- **Two-tier caching**: Normal TTL (1 hour) for refresh, grace period (24 hours) for fallback
+- **Zero downtime**: Prevents authentication failures during JWKS endpoint outages
+- **Configurable TTLs**: Tune cache behavior based on your key rotation policies
+- **Observable**: Warning logs when using stale cache for monitoring and alerting
 
 ### Safe Tracing
 - **Panic protection**: OpenTelemetry integration with comprehensive panic recovery
