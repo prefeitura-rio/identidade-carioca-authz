@@ -1,4 +1,4 @@
-module github.com/prefeitura-rio/cerbos-ext-authz
+module github.com/prefeitura-rio/identidade-carioca-authz
 
 go 1.24
 

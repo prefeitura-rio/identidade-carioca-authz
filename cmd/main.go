@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/config"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/service"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/config"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/service"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -30,6 +30,9 @@ import (
 const (
 	authorizationHeader = "authorization"
 	targetServiceHeader = "x-target-service"
+	policyScopeHeader   = "x-policy-scope"
+	appScopeHeader      = "x-cerbos-scope"
+	appNameHeader       = "x-app-name"
 	resultHeader        = "x-ext-authz-check-result"
 	receivedHeader      = "x-ext-authz-check-received"
 	resultAllowed       = "allowed"
@@ -358,18 +361,27 @@ func (s *ExtAuthzServer) Check(ctx context.Context, request *authv3.CheckRequest
 		}
 	}
 
-	// Extract target service hint
 	targetService := ""
+	policyScope := ""
 	if headers != nil {
 		if svc, exists := headers[targetServiceHeader]; exists {
 			targetService = svc
+		} else if svc, exists := headers["x-service-name"]; exists {
+			targetService = svc
+		}
+		if scope, exists := headers[policyScopeHeader]; exists {
+			policyScope = scope
+		} else if scope, exists := headers[appScopeHeader]; exists {
+			policyScope = scope
+		} else if scope, exists := headers[appNameHeader]; exists {
+			policyScope = scope
 		}
 	}
 
-	// Create authorization request
 	authReq := &service.AuthorizationRequest{
 		AuthHeader: authHeader,
 		Service:    targetService,
+		Scope:      policyScope,
 		Path:       path,
 		Method:     method,
 		Host:       host,
@@ -430,10 +442,18 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 		authHeader = request.Header.Get("Authorization")
 	}
 
-	// Extract target service hint
 	targetService := request.Header.Get(targetServiceHeader)
+	if targetService == "" {
+		targetService = request.Header.Get("x-service-name")
+	}
+	policyScope := request.Header.Get(policyScopeHeader)
+	if policyScope == "" {
+		policyScope = request.Header.Get(appScopeHeader)
+	}
+	if policyScope == "" {
+		policyScope = request.Header.Get(appNameHeader)
+	}
 
-	// Extract host
 	host := request.Host
 
 	// Extract path - use direct path for cluster-internal requests, X-Envoy-Original-Path for external
@@ -472,10 +492,10 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 		return
 	}
 
-	// Create authorization request
 	authReq := &service.AuthorizationRequest{
 		AuthHeader: authHeader,
 		Service:    targetService,
+		Scope:      policyScope,
 		Path:       path,
 		Method:     request.Method,
 		Host:       request.Host,

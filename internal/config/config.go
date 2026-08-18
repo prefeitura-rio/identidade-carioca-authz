@@ -43,6 +43,9 @@ type Config struct {
 	CircuitBreakerRecoveryTime     time.Duration
 	HealthCheckIntervalSeconds     int
 
+	DefaultPolicyScope  string
+	DefaultResourceKind string
+
 	// Observability
 	OTelEndpoint    string
 	OTelServiceName string
@@ -74,9 +77,18 @@ func Load() (*Config, error) {
 		CircuitBreakerFailureThreshold: 5,
 		CircuitBreakerRecoveryTime:     60 * time.Second,
 		HealthCheckIntervalSeconds:     30,
-		OTelServiceName:                "cerbos-authz",
+		DefaultPolicyScope:             "",
+		DefaultResourceKind:            "generic",
+		OTelServiceName:                "identidade-carioca-authz",
 		LogLevel:                       "info",
 		Port:                           8080,
+	}
+
+	if scope := os.Getenv("DEFAULT_POLICY_SCOPE"); scope != "" {
+		config.DefaultPolicyScope = scope
+	}
+	if kind := os.Getenv("DEFAULT_RESOURCE_KIND"); kind != "" {
+		config.DefaultResourceKind = kind
 	}
 
 	// Cerbos settings

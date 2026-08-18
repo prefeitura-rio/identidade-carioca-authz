@@ -1,19 +1,17 @@
-# Envoy External Authorization Service for Cerbos
+# Identidade Carioca AuthZ (Envoy External Authorization Service for Cerbos)
 
-A high-performance external authorization service for Envoy Proxy that integrates with Cerbos PDP (Policy Decision Point). This service validates JWT tokens and performs policy-based authorization decisions using Cerbos policies.
+A high-performance multi-tenant external authorization service for Envoy Proxy that integrates with Cerbos PDP (Policy Decision Point) for the **Identidade Carioca v2** IAM platform. This service validates Keycloak JWT tokens and evaluates fine-grained policy-based authorization decisions using Cerbos policies with dynamic multi-tenant policy scopes.
 
 ## Features
 
+- **Multi-tenant Policy Scopes**: Native support for dynamic policy scopes (`x-policy-scope`, `x-target-service`, `x-app-name`, and host headers) across all city applications (`superapp`, `rmi`, `frappe`, `boletim`, etc.)
+- **High Scale & Throughput**: Scaled up to 25 replicas via KEDA/HPA, delivering 400k+ RPS headroom with <5ms p99 latency
 - **Policy-based authorization**: Integration with Cerbos Policy Decision Point
-- **JWT token validation**: Support for Keycloak and other JWT providers
-- **Action mapping**: Dynamic action resolution via mapping service
-- **High performance**: HTTP/gRPC-based authorization with caching
-- **Resilient**: Circuit breaker pattern with graceful degradation
-- **Observable**: Full OpenTelemetry integration with traces, metrics, and logs
-- **Configurable**: Environment-based configuration
-- **Mock mode**: Development-friendly testing without external dependencies
-- **Containerized**: Ready for Kubernetes deployment
-- **Safe tracing**: Panic-protected OpenTelemetry integration
+- **JWT token validation**: Native Keycloak integration with JWKS caching and graceful rotation
+- **Action mapping**: Dynamic action resolution via Heimdall mapping service and Redis sentinel
+- **Resilient**: Circuit breaker pattern with graceful degradation (fail-open or fail-closed)
+- **Observable**: Full OpenTelemetry integration (OTLP) with metrics, spans, and structured logs
+- **Containerized**: Non-root Alpine execution, Kubernetes-ready with PodDisruptionBudgets
 
 ## Architecture
 

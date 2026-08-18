@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cerbos-authz
+  name: identidade-carioca-authz
   labels:
-    app: cerbos-authz
+    app: identidade-carioca-authz
   annotations:
     secrets.infisical.com/auto-reload: "true"
 spec:
   selector:
     matchLabels:
-      app: cerbos-authz
+      app: identidade-carioca-authz
   template:
     metadata:
       labels:
-        app: cerbos-authz
+        app: identidade-carioca-authz
     spec:
       containers:
-        - name: cerbos-authz
-          image: ghcr.io/prefeitura-rio/cerbos-ext-authz:stable
+        - name: authz
+          image: ghcr.io/prefeitura-rio/identidade-carioca-authz:stable
           ports:
             - containerPort: 8000
               name: http
@@ -34,10 +34,8 @@ spec:
               memory: "256Mi"
               cpu: "1000m"
             limits:
-              memory: "512Mi"
+              memory: "1024Mi"
               cpu: "2000m"
-          # Note: No health probes since this is an Envoy ext_authz service
-          # The service is considered healthy if it responds to authorization requests
           securityContext:
             runAsNonRoot: true
             runAsUser: 1001
@@ -55,9 +53,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cerbos-authz
+  name: identidade-carioca-authz
   labels:
-    app: cerbos-authz
+    app: identidade-carioca-authz
 spec:
   type: ClusterIP
   ports:
@@ -70,22 +68,22 @@ spec:
       protocol: TCP
       name: grpc
   selector:
-    app: cerbos-authz
+    app: identidade-carioca-authz
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cerbos-authz-hpa
+  name: identidade-carioca-authz-hpa
   labels:
-    app: cerbos-authz
+    app: identidade-carioca-authz
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: cerbos-authz
-  minReplicas: 2
-  maxReplicas: 10
+    name: identidade-carioca-authz
+  minReplicas: 3
+  maxReplicas: 25
   metrics:
     - type: Resource
       resource:
@@ -93,6 +91,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 60
@@ -114,11 +118,11 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: cerbos-authz-pdb
+  name: identidade-carioca-authz-pdb
   labels:
-    app: cerbos-authz
+    app: identidade-carioca-authz
 spec:
-  minAvailable: 1
+  minAvailable: 2
   selector:
     matchLabels:
-      app: cerbos-authz
+      app: identidade-carioca-authz

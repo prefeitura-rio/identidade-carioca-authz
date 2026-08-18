@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/cache"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/cerbos"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/circuitbreaker"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/config"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/jwt"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/mapping"
-	"github.com/prefeitura-rio/cerbos-ext-authz/internal/observability"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/cache"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/cerbos"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/circuitbreaker"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/config"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/jwt"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/mapping"
+	"github.com/prefeitura-rio/identidade-carioca-authz/internal/observability"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -34,6 +34,7 @@ type Service struct {
 type AuthorizationRequest struct {
 	AuthHeader string `json:"authHeader"`
 	Service    string `json:"service"`
+	Scope      string `json:"scope,omitempty"`
 	Path       string `json:"path"`
 	Method     string `json:"method"`
 	Host       string `json:"host"`
@@ -338,7 +339,7 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 	if s.config.CircuitBreakerEnabled {
 		// Use circuit breaker
 		authErr = s.circuitBreaker.Execute(ctx, func() error {
-			result, err := s.authorizeToCerbos(ctx, principalID, roles, req.Path, req.Method, action)
+			result, err := s.authorizeToCerbos(ctx, principalID, roles, req.Path, req.Method, action, req.Service, req.Scope)
 			if err != nil {
 				return err
 			}
@@ -347,7 +348,7 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 		})
 	} else {
 		// Direct authorization
-		authResult, authErr = s.authorizeToCerbos(ctx, principalID, roles, req.Path, req.Method, action)
+		authResult, authErr = s.authorizeToCerbos(ctx, principalID, roles, req.Path, req.Method, action, req.Service, req.Scope)
 	}
 
 	// Handle authorization result
@@ -374,14 +375,12 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 }
 
 // authorizeToCerbos calls Cerbos to perform authorization
-func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, roles []string, path, method, action string) (*cerbos.CheckResourcesResponse, error) {
-	// Safe tracing with panic protection
+func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, roles []string, path, method, action, serviceName, policyScope string) (*cerbos.CheckResourcesResponse, error) {
 	var span trace.Span
 	if s.telemetry != nil && s.telemetry.Tracer != nil && s.telemetry.Provider != nil && s.telemetry.Meter != nil {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// Log the panic but don't crash the service
 					if s.telemetry != nil && s.telemetry.Logger != nil {
 						s.telemetry.Logger.WithField("panic", r).Error("Tracing panic recovered, continuing without tracing")
 					}
@@ -393,7 +392,6 @@ func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, rol
 			defer func() {
 				defer func() {
 					if r := recover(); r != nil {
-						// Log the panic but don't crash the service
 						if s.telemetry != nil && s.telemetry.Logger != nil {
 							s.telemetry.Logger.WithField("panic", r).Error("Span.End() panic recovered")
 						}
@@ -406,7 +404,19 @@ func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, rol
 
 	startTime := time.Now()
 
-	// Build Cerbos request
+	effectiveScope := policyScope
+	if effectiveScope == "" {
+		effectiveScope = serviceName
+	}
+	if effectiveScope == "" {
+		effectiveScope = s.config.DefaultPolicyScope
+	}
+
+	resourceKind := s.config.DefaultResourceKind
+	if resourceKind == "" {
+		resourceKind = "generic"
+	}
+
 	request := &cerbos.CheckResourcesRequest{
 		RequestID: generateRequestID(),
 		Principal: cerbos.Principal{
@@ -421,11 +431,13 @@ func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, rol
 		Resources: []cerbos.Resource{
 			{
 				Resource: cerbos.ResourceInfo{
-					Kind: "generic",  // Use generic resource kind as in Python reference
-					ID:   "resource", // Simple resource ID as in Python reference
+					Kind:  resourceKind,
+					ID:    "resource",
+					Scope: effectiveScope,
 					Attr: map[string]interface{}{
-						"path":   path,
-						"method": method,
+						"path":    path,
+						"method":  method,
+						"service": serviceName,
 					},
 				},
 				Actions: []string{action},
@@ -433,9 +445,8 @@ func (s *Service) authorizeToCerbos(ctx context.Context, principalID string, rol
 		},
 	}
 
-	// Log Cerbos authorization request with CPF
-	log.Printf("[CERBOS] Checking authorization: principal=%s, action=%s, resource=%s %s, roles=%v",
-		principalID, action, method, path, roles)
+	log.Printf("[CERBOS] Checking authorization: principal=%s, scope=%s, action=%s, resource=%s %s, roles=%v",
+		principalID, effectiveScope, action, method, path, roles)
 
 	result, err := s.cerbosClient.CheckResources(ctx, request)
 	duration := time.Since(startTime)

@@ -37,9 +37,10 @@ type Resource struct {
 
 // ResourceInfo contains resource metadata
 type ResourceInfo struct {
-	Kind string                 `json:"kind"`
-	ID   string                 `json:"id"`
-	Attr map[string]interface{} `json:"attr"`
+	Kind  string                 `json:"kind"`
+	ID    string                 `json:"id"`
+	Scope string                 `json:"scope,omitempty"`
+	Attr  map[string]interface{} `json:"attr"`
 }
 
 // CheckResourcesResponse represents a Cerbos check resources response

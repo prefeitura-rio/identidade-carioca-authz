@@ -55,15 +55,15 @@
         };
 
         packages.default = pkgs.buildGoModule {
-          pname = "cerbos-authz";
+          pname = "identidade-carioca-authz";
           version = "0.1.0";
           src = ./.;
 
           vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
           meta = with pkgs.lib; {
-            description = "Envoy External Authorization Service for Cerbos PDP";
-            homepage = "https://github.com/prefeitura-rio/cerbos-ext-authz";
+            description = "Envoy External Authorization Service for Cerbos PDP (Multi-Tenant) - Identidade Carioca v2";
+            homepage = "https://github.com/prefeitura-rio/identidade-carioca-authz";
             license = licenses.mit;
             platforms = platforms.linux ++ platforms.darwin;
           };
