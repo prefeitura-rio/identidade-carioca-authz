@@ -263,8 +263,10 @@ func (c *redisCache) hashKey(key string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// NewCache creates a new Redis cache
 func NewCache(config Config) (Cache, error) {
+	if config.Type == "memory" || config.RedisURL == "" {
+		return NewMemoryCache(config), nil
+	}
 	return NewRedisCache(config)
 }
 
