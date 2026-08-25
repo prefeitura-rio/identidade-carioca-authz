@@ -1,0 +1,80 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: base-chart
+  namespace: identidade-carioca-authz
+spec:
+  interval: 1h
+  type: oci
+  url: oci://ghcr.io/prefeitura-rio/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: identidade-carioca-authz
+  namespace: identidade-carioca-authz
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: base-chart
+      version: 2.4.2
+      sourceRef:
+        kind: HelmRepository
+        name: base-chart
+      interval: 1h
+  values:
+    replicaCount: 2
+    fullnameOverride: identidade-carioca-authz
+    image:
+      repository: ghcr.io/prefeitura-rio/identidade-carioca-authz
+      tag: sha-5838fe31c6ddfe25667ee914889f3be7eed1e42c@sha256:d7699331139f2fa27b971850b24306c96b2e06625c2d5865154c944b9dfd8059
+      pullPolicy: IfNotPresent
+    imagePullSecrets:
+      - name: ghcr-credentials
+    service:
+      type: ClusterIP
+      port: 8000
+      containerPort: 8000
+      ports:
+        - name: grpc
+          port: 9000
+          targetPort: 9000
+          protocol: TCP
+    resources:
+      requests: { memory: 256Mi, cpu: 1000m }
+      limits: { memory: 1024Mi, cpu: 2000m }
+    healthCheck: { path: /health }
+    podSecurityContext: { fsGroup: 1001 }
+    securityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      readOnlyRootFilesystem: true
+    terminationGracePeriodSeconds: 30
+    envFrom:
+      - secretRef: { name: cerbos-authz-secrets }
+    infisicalSecret:
+      enabled: true
+      secretName: cerbos-authz-secrets
+      projectSlug: identidade-carioca-authz-ql-vg
+      envSlug: prod
+      creationPolicy: Orphan
+      kubernetesAuth:
+        enabled: true
+        identityId: ae19371c-5d95-47e2-a00b-b92a394becb8
+        serviceAccountRef:
+          name: infisical-auth
+          namespace: default
+    istio:
+      enabled: true
+      virtualService: { enabled: false }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 25
+      keda: { enabled: false }
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
