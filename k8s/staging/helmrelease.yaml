@@ -59,12 +59,10 @@ spec:
       projectSlug: identidade-carioca-authz-ql-vg
       envSlug: staging
       creationPolicy: Orphan
-      kubernetesAuth:
-        enabled: true
-        identityId: ae19371c-5d95-47e2-a00b-b92a394becb8
-        serviceAccountRef:
-          name: infisical-auth
-          namespace: default
+      universalAuth:
+        credentialsRef:
+          secretName: universal-auth-credentials
+          secretNamespace: infisical-operator-system
     istio:
       enabled: true
       virtualService: { enabled: false }
