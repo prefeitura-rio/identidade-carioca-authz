@@ -2,7 +2,7 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: base-chart
-  namespace: identidade-carioca-authz-staging
+  namespace: identidade-carioca-authz
 spec:
   interval: 1h
   type: oci
@@ -12,7 +12,7 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: identidade-carioca-authz
-  namespace: identidade-carioca-authz-staging
+  namespace: identidade-carioca-authz
 spec:
   interval: 10m
   chart:
@@ -64,8 +64,7 @@ spec:
           secretName: universal-auth-credentials
           secretNamespace: infisical-operator-system
     istio:
-      enabled: true
-      virtualService: { enabled: false }
+      enabled: false
     autoscaling:
       enabled: true
       minReplicas: 2

@@ -64,8 +64,7 @@ spec:
           secretName: universal-auth-credentials
           secretNamespace: infisical-operator-system
     istio:
-      enabled: true
-      virtualService: { enabled: false }
+      enabled: false
     autoscaling:
       enabled: true
       minReplicas: 2
