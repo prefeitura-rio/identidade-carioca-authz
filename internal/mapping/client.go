@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -32,6 +31,10 @@ type RedisMapping struct {
 	ID          int    `json:"id"`
 	Method      string `json:"method"`
 	PathPattern string `json:"path_pattern"`
+	// MatchRegex is the canonical, pre-anchored regex for this mapping. When
+	// present it takes precedence over PathPattern for matching. Absent on
+	// mappings written before this field existed (backward compatibility).
+	MatchRegex  string `json:"match_regex,omitempty"`
 	ActionID    int    `json:"action_id"`
 	ActionName  string `json:"action_name"`
 	Description string `json:"description"`
@@ -197,15 +200,16 @@ func (c *client) patternMatchingFallback(ctx context.Context, path, method strin
 			continue
 		}
 
-		// Test if request path matches the pattern
-		log.Printf("[MAPPING] Pattern %d/%d: Testing '%s' against '%s'", i+1, len(mappingIDs), path, redisMapping.PathPattern)
-		matched, err := regexp.MatchString(redisMapping.PathPattern, path)
+		// Test if request path matches the pattern (match_regex when present,
+		// otherwise a safe anchored pattern derived from path_pattern)
+		re, err := compileMatchPattern(redisMapping)
 		if err != nil {
-			log.Printf("[MAPPING] Pattern %d/%d: ✗ Invalid regex '%s': %v", i+1, len(mappingIDs), redisMapping.PathPattern, err)
+			log.Printf("[MAPPING] Pattern %d/%d: ✗ %v", i+1, len(mappingIDs), err)
 			continue
 		}
 
-		if matched {
+		log.Printf("[MAPPING] Pattern %d/%d: Testing '%s' against '%s'", i+1, len(mappingIDs), path, re.String())
+		if re.MatchString(path) {
 			log.Printf("[MAPPING] Pattern %d/%d: ✓ MATCH! '%s' -> %s", i+1, len(mappingIDs), redisMapping.PathPattern, redisMapping.ActionName)
 
 			// Cache the result for future lookups (5 minute TTL as per spec)
