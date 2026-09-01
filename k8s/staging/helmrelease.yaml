@@ -67,7 +67,7 @@ spec:
       enabled: false
     autoscaling:
       enabled: true
-       minReplicas: 10
+      minReplicas: 10
       maxReplicas: 25
       keda: { enabled: false }
       targetCPUUtilizationPercentage: 70
