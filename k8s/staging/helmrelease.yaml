@@ -28,7 +28,7 @@ spec:
     fullnameOverride: identidade-carioca-authz
     image:
       repository: ghcr.io/prefeitura-rio/identidade-carioca-authz
-      tag: sha-51b6d9c3bc710d091ec3553721b2c8940df73443@sha256:b61a7d12dd48bfcc545b682b61417122c2d5ab411f00f3ccb3238175f389b7b6
+      tag: sha-0f687f5fb36b279d337e4d154122dab5236bd59d@sha256:ff6497b8f4a70cde973040f63abb9a5db75ba4b7837c7af4db42ce20e2a913a0
       pullPolicy: IfNotPresent
     imagePullSecrets:
       - name: ghcr-credentials
