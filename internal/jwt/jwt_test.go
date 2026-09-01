@@ -115,3 +115,62 @@ func TestClaimsHelperMethods(t *testing.T) {
 		t.Errorf("expected past token to be expired")
 	}
 }
+
+func TestClaimsGetRoles(t *testing.T) {
+	tests := []struct {
+		name   string
+		claims Claims
+		want   []string
+	}{
+		{
+			name:   "groups only",
+			claims: Claims{Groups: []string{"group-a", "group-b"}},
+			want:   []string{"group-a", "group-b"},
+		},
+		{
+			name: "realm roles and groups",
+			claims: Claims{
+				RealmAccess: &RealmAccess{Roles: []string{"realm-a"}},
+				Groups:      []string{"group-a", "group-b"},
+			},
+			want: []string{"realm-a", "group-a", "group-b"},
+		},
+		{
+			name: "direct roles take precedence and combine",
+			claims: Claims{
+				Roles:       []string{"direct-a", "direct-b"},
+				RealmAccess: &RealmAccess{Roles: []string{"realm-a"}},
+				Groups:      []string{"group-a"},
+			},
+			want: []string{"direct-a", "direct-b", "realm-a", "group-a"},
+		},
+		{
+			name:   "empty claims",
+			claims: Claims{},
+			want:   []string{},
+		},
+		{
+			name: "duplicate roles are removed",
+			claims: Claims{
+				Roles:       []string{"direct-a", "shared"},
+				RealmAccess: &RealmAccess{Roles: []string{"shared", "realm-a"}},
+				Groups:      []string{"group-a", "shared", "group-a"},
+			},
+			want: []string{"direct-a", "shared", "realm-a", "group-a"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.claims.GetRoles()
+			if len(got) != len(tt.want) {
+				t.Fatalf("GetRoles() = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("GetRoles()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

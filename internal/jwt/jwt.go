@@ -23,6 +23,7 @@ type Claims struct {
 	Sub               string                 `json:"sub"`
 	PreferredUsername string                 `json:"preferred_username"`
 	Roles             []string               `json:"roles"`
+	Groups            []string               `json:"groups"`
 	RealmAccess       *RealmAccess           `json:"realm_access"`
 	ResourceAccess    map[string]interface{} `json:"resource_access"`
 	Exp               int64                  `json:"exp"`
@@ -384,19 +385,27 @@ func (c *Claims) GetUserID() string {
 	return c.Sub
 }
 
-// GetRoles extracts roles from claims (try direct roles field, then realm_access.roles)
+// GetRoles extracts direct roles, realm roles, and groups in stable order without duplicates.
 func (c *Claims) GetRoles() []string {
-	// Direct roles field
-	if len(c.Roles) > 0 {
-		return c.Roles
+	roles := make([]string, 0, len(c.Roles)+len(c.Groups))
+	seen := make(map[string]struct{}, cap(roles))
+	appendUnique := func(values []string) {
+		for _, role := range values {
+			if _, exists := seen[role]; exists {
+				continue
+			}
+			seen[role] = struct{}{}
+			roles = append(roles, role)
+		}
 	}
 
-	// Keycloak realm_access.roles
-	if c.RealmAccess != nil && len(c.RealmAccess.Roles) > 0 {
-		return c.RealmAccess.Roles
+	appendUnique(c.Roles)
+	if c.RealmAccess != nil {
+		appendUnique(c.RealmAccess.Roles)
 	}
+	appendUnique(c.Groups)
 
-	return []string{}
+	return roles
 }
 
 // IsExpired checks if the token is expired
