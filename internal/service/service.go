@@ -84,13 +84,18 @@ func NewService(cfg *config.Config) (*Service, error) {
 	}
 	jwtParser := jwt.NewParser(jwtConfig)
 
-	// Create cache
+	// Create cache. The decision cache shares its Redis Sentinel cluster with
+	// the mapping service, so it reuses the same REDIS_MAPPINGS_SENTINEL_*
+	// settings; RedisURL remains the standalone fallback for local/dev.
 	cacheConfig := cache.Config{
-		Type:          "redis",
-		RedisURL:      cfg.RedisURL,
-		DefaultTTL:    time.Duration(cfg.CacheTTLSeconds) * time.Second,
-		FailedTTL:     time.Duration(cfg.CacheFailedTTLSeconds) * time.Second,
-		MaxMemorySize: 10000, // Not used for Redis
+		Type:                 "redis",
+		RedisURL:             cfg.RedisURL,
+		RedisSentinelHosts:   cfg.RedisMappingsSentinelHosts,
+		RedisSentinelService: cfg.RedisMappingsSentinelService,
+		RedisPassword:        cfg.RedisMappingsPassword,
+		DefaultTTL:           time.Duration(cfg.CacheTTLSeconds) * time.Second,
+		FailedTTL:            time.Duration(cfg.CacheFailedTTLSeconds) * time.Second,
+		MaxMemorySize:        10000, // Not used for Redis
 	}
 	cacheInstance, err := cache.NewCache(cacheConfig)
 	if err != nil {

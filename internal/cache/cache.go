@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,11 +42,21 @@ type Stats struct {
 
 // Config holds cache configuration
 type Config struct {
-	Type          string        // "memory" or "redis"
-	RedisURL      string        // Redis connection URL
-	DefaultTTL    time.Duration // Default TTL for successful validations
-	FailedTTL     time.Duration // TTL for failed validations
-	MaxMemorySize int           // Maximum number of items in memory cache
+	Type       string        // "memory" or "redis"
+	RedisURL   string        // Standalone Redis connection URL (used when Sentinel settings are absent)
+	DefaultTTL time.Duration // Default TTL for successful validations
+	FailedTTL  time.Duration // TTL for failed validations
+
+	// RedisSentinelHosts and RedisSentinelService enable Redis Sentinel
+	// failover awareness. The decision cache shares its Redis Sentinel
+	// cluster with the mapping service, so these are populated from the
+	// same REDIS_MAPPINGS_SENTINEL_HOSTS / REDIS_MAPPINGS_SENTINEL_SERVICE_NAME
+	// settings. When both are set, they take precedence over RedisURL.
+	RedisSentinelHosts   string // Comma-separated list of "host:port" sentinel addresses
+	RedisSentinelService string // Sentinel master name (monitored master group)
+	RedisPassword        string // Password used for Sentinel-backed connections
+
+	MaxMemorySize int // Maximum number of items in memory cache
 }
 
 // memoryCache implements in-memory caching
@@ -168,14 +179,14 @@ type redisCache struct {
 	mu     sync.RWMutex
 }
 
-// NewRedisCache creates a new Redis cache
+// NewRedisCache creates a new Redis cache, preferring a Sentinel-backed
+// failover client when RedisSentinelHosts/RedisSentinelService are set and
+// falling back to the standalone RedisURL otherwise.
 func NewRedisCache(config Config) (Cache, error) {
-	opts, err := redis.ParseURL(config.RedisURL)
+	client, err := newRedisClient(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+		return nil, err
 	}
-
-	client := redis.NewClient(opts)
 
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -189,6 +200,40 @@ func NewRedisCache(config Config) (Cache, error) {
 		config: config,
 		client: client,
 	}, nil
+}
+
+// newRedisClient builds the underlying go-redis client for the given config.
+func newRedisClient(config Config) (*redis.Client, error) {
+	hosts := splitSentinelHosts(config.RedisSentinelHosts)
+	if len(hosts) > 0 && config.RedisSentinelService != "" {
+		return redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:    config.RedisSentinelService,
+			SentinelAddrs: hosts,
+			Password:      config.RedisPassword,
+		}), nil
+	}
+
+	opts, err := redis.ParseURL(config.RedisURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+	}
+	return redis.NewClient(opts), nil
+}
+
+// splitSentinelHosts parses a comma-separated "host:port" list, trimming
+// whitespace and dropping empty entries.
+func splitSentinelHosts(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	hosts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if host := strings.TrimSpace(part); host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
 }
 
 func (c *redisCache) Get(ctx context.Context, key string) (*ValidationResult, error) {
@@ -264,7 +309,8 @@ func (c *redisCache) hashKey(key string) string {
 }
 
 func NewCache(config Config) (Cache, error) {
-	if config.Type == "memory" || config.RedisURL == "" {
+	hasSentinel := len(splitSentinelHosts(config.RedisSentinelHosts)) > 0 && config.RedisSentinelService != ""
+	if config.Type == "memory" || (config.RedisURL == "" && !hasSentinel) {
 		return NewMemoryCache(config), nil
 	}
 	return NewRedisCache(config)
