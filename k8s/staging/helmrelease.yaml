@@ -53,6 +53,11 @@ spec:
     terminationGracePeriodSeconds: 30
     envFrom:
       - secretRef: { name: cerbos-authz-secrets }
+    env:
+      - name: REDIS_MAPPINGS_SENTINEL_HOSTS
+        value: redis-announce-0.cerbos-redis.svc.cluster.local:26379,redis-announce-1.cerbos-redis.svc.cluster.local:26379
+      - name: REDIS_MAPPINGS_SENTINEL_SERVICE_NAME
+        value: mymaster
     infisicalSecret:
       enabled: true
       secretName: cerbos-authz-secrets
