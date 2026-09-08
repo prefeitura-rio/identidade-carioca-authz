@@ -42,7 +42,7 @@ spec:
           targetPort: 9000
           protocol: TCP
     resources:
-      requests: { memory: 256Mi, cpu: 500m }
+      requests: { memory: 256Mi, cpu: 250m }
       limits: { memory: 512Mi, cpu: 2000m }
     healthCheck: { path: /health }
     podSecurityContext: { fsGroup: 1001 }
