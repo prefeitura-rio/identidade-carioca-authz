@@ -24,7 +24,7 @@ spec:
         name: base-chart
       interval: 1h
   values:
-    replicaCount: 20
+    replicaCount: 25
     fullnameOverride: identidade-carioca-authz
     image:
       repository: ghcr.io/prefeitura-rio/identidade-carioca-authz
@@ -72,7 +72,7 @@ spec:
       enabled: false
     autoscaling:
       enabled: true
-      minReplicas: 20
+      minReplicas: 25
       maxReplicas: 25
       keda: { enabled: false }
       targetCPUUtilizationPercentage: 70
