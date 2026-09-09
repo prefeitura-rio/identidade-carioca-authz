@@ -454,11 +454,17 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 		policyScope = request.Header.Get(appNameHeader)
 	}
 
+	method := request.Header.Get("X-Envoy-Original-Method")
+	if method == "" {
+		method = request.Header.Get("X-Original-Method")
+	}
+	if method == "" {
+		method = request.Method
+	}
+
 	host := request.Host
 
-	// Extract path - use direct path for cluster-internal requests, X-Envoy-Original-Path for external
 	path := ""
-	// Strip port from host before checking if it's cluster-internal
 	hostWithoutPort := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostWithoutPort = h
@@ -466,20 +472,26 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 	isClusterInternal := strings.HasSuffix(hostWithoutPort, ".svc.cluster.local")
 
 	if isClusterInternal {
-		// For cluster-internal requests, use the direct request path
 		path = stripQueryParams(request.URL.Path)
 		log.Printf("[HTTP] Cluster-internal request detected (host: %s), using direct path: %s", host, path)
 	} else {
-		// For external requests, use X-Envoy-Original-Path header
 		originalPath := request.Header.Get("X-Envoy-Original-Path")
 		if originalPath == "" {
-			log.Printf("[HTTP][denied]: Missing X-Envoy-Original-Path header for external request (host: %s)", host)
+			originalPath = request.Header.Get("X-Original-URI")
+		}
+		if originalPath == "" {
+			originalPath = request.Header.Get("X-Forwarded-Uri")
+		}
+		if originalPath == "" && request.URL.Path != "" && request.URL.Path != "/" {
+			originalPath = request.URL.Path
+		}
+		if originalPath == "" {
+			log.Printf("[HTTP][denied]: Missing path information for external request (host: %s)", host)
 			response.Header().Set("X-Cerbos-Error", "missing_original_path_header")
 			response.WriteHeader(http.StatusBadRequest)
-			_, _ = response.Write([]byte("Missing X-Envoy-Original-Path header - path information required for authorization"))
+			_, _ = response.Write([]byte("Missing path information - required for authorization"))
 			return
 		}
-		// Strip query parameters for mapping lookup
 		path = stripQueryParams(originalPath)
 	}
 
