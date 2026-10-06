@@ -28,7 +28,7 @@ spec:
     fullnameOverride: identidade-carioca-authz
     image:
       repository: ghcr.io/prefeitura-rio/identidade-carioca-authz
-      tag: sha-5838fe31c6ddfe25667ee914889f3be7eed1e42c@sha256:d7699331139f2fa27b971850b24306c96b2e06625c2d5865154c944b9dfd8059
+      tag: sha-a8fbe7c50f0a0d3130f51054fd16f231c09296f2@sha256:f315f7844d331ea192cefd0181a876cdc44c0478e0fcf5e6ea49c81f7a4136f9
       pullPolicy: IfNotPresent
     imagePullSecrets:
       - name: ghcr-credentials
@@ -54,7 +54,7 @@ spec:
     envFrom:
       - secretRef: { name: cerbos-authz-secrets }
     infisicalSecret:
-      enabled: true
+      enabled: false
       secretName: cerbos-authz-secrets
       projectSlug: identidade-carioca-authz-ql-vg
       envSlug: prod
