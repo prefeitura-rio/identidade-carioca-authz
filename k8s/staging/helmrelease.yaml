@@ -61,7 +61,7 @@ spec:
     infisicalSecret:
       enabled: true
       secretName: cerbos-authz-secrets
-      projectSlug: identidade-carioca-authz-ql-vg
+      projectSlug: identidade-carioca-authz
       envSlug: staging
       creationPolicy: Orphan
       universalAuth:
