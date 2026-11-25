@@ -62,7 +62,7 @@ spec:
       enabled: true
       secretName: cerbos-authz-secrets
       projectSlug: identidade-carioca-authz
-      envSlug: staging
+      envSlug: stg
       creationPolicy: Orphan
       universalAuth:
         credentialsRef:
